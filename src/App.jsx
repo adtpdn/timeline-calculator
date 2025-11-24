@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, Trash2, Clock, Activity, Copy, Check, 
-  ArrowUp, ArrowDown, Film, Scissors, Play, RefreshCw, Settings, X, GripVertical, Shield, ShieldAlert
+  ArrowUp, ArrowDown, Film, Scissors, Play, RefreshCw, Settings, X, GripVertical, Shield, ShieldAlert,
+  Moon, Sun, ChevronDown, ChevronRight
 } from 'lucide-react';
 
 const SEQ_COLORS = [
@@ -15,6 +16,43 @@ const CLIP_COLORS = [
   'bg-orange-400', 'bg-lime-400', 'bg-fuchsia-400', 
   'bg-sky-400', 'bg-red-400'
 ];
+
+// --- Helper: Recalculate Timing Logic ---
+const reorderAndRecalculate = (items, index, direction) => {
+  const newItems = [...items];
+  
+  // 1. Swap Elements in Array
+  if (direction === 'up' && index > 0) {
+    [newItems[index], newItems[index - 1]] = [newItems[index - 1], newItems[index]];
+  } else if (direction === 'down' && index < newItems.length - 1) {
+    [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+  } else {
+    return items; // No move needed
+  }
+
+  // 2. Calculate Gaps from the ORIGINAL order (Position-based gaps)
+  // We assume the user wants to keep the "Timeline Slots" (e.g. Gap -> Item -> Gap -> Item)
+  const gaps = items.map((item, i) => {
+    const prevEnd = i === 0 ? 0 : items[i-1].end;
+    return Math.max(0, item.start - prevEnd);
+  });
+
+  // 3. Apply new timings to the NEW order
+  let currentPos = 0;
+  return newItems.map((item, i) => {
+    // Preserve duration
+    const duration = Math.max(0.001, item.end - item.start);
+    const gap = gaps[i] || 0;
+    
+    // New Start is previous end + gap
+    const newStart = parseFloat((currentPos + gap).toFixed(4));
+    const newEnd = parseFloat((newStart + duration).toFixed(4));
+    
+    currentPos = newEnd;
+    
+    return { ...item, start: newStart, end: newEnd };
+  });
+};
 
 // --- Helper Component: Interactive Dual Handle Slider ---
 const TimelineSlider = ({ start, end, label, color, onChange, subLabel, previewSegments = [] }) => {
@@ -58,13 +96,13 @@ const TimelineSlider = ({ start, end, label, color, onChange, subLabel, previewS
   return (
     <div className="relative h-10 select-none group">
        {/* Background Track */}
-       <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-2 bg-slate-200 rounded-full overflow-hidden">
+       <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden transition-colors">
           {/* Fill (Active Area) */}
           <div 
             className={`absolute h-full ${color} opacity-30`}
             style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
           >
-            {/* Internal Preview Segments (Rendered relative to the active section) */}
+            {/* Internal Preview Segments */}
             {previewSegments.map((seg, i) => {
               const segLeft = seg.start * 100;
               const segWidth = Math.max(0, seg.end - seg.start) * 100;
@@ -88,12 +126,12 @@ const TimelineSlider = ({ start, end, label, color, onChange, subLabel, previewS
        >
           {/* Start Handle */}
           <div 
-            className="absolute top-1/2 -translate-y-1/2 w-4 h-6 bg-white border border-slate-300 shadow-sm rounded flex items-center justify-center cursor-ew-resize hover:border-indigo-500 hover:scale-110 transition-transform z-10"
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-6 bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 shadow-sm rounded flex items-center justify-center cursor-ew-resize hover:border-indigo-500 hover:scale-110 transition-transform z-10"
             style={{ left: `${leftPct}%`, transform: 'translate(-50%, -50%)' }}
             onPointerDown={(e) => handlePointerDown(e, 'start')}
             onPointerUp={handlePointerUp}
           >
-            <div className="w-0.5 h-3 bg-slate-300"></div>
+            <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-400"></div>
           </div>
 
           {/* Active Bar Label */}
@@ -108,12 +146,12 @@ const TimelineSlider = ({ start, end, label, color, onChange, subLabel, previewS
 
           {/* End Handle */}
           <div 
-            className="absolute top-1/2 -translate-y-1/2 w-4 h-6 bg-white border border-slate-300 shadow-sm rounded flex items-center justify-center cursor-ew-resize hover:border-indigo-500 hover:scale-110 transition-transform z-10"
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-6 bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 shadow-sm rounded flex items-center justify-center cursor-ew-resize hover:border-indigo-500 hover:scale-110 transition-transform z-10"
             style={{ left: `${leftPct + widthPct}%`, transform: 'translate(-50%, -50%)' }}
             onPointerDown={(e) => handlePointerDown(e, 'end')}
             onPointerUp={handlePointerUp}
           >
-            <div className="w-0.5 h-3 bg-slate-300"></div>
+            <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-400"></div>
           </div>
        </div>
     </div>
@@ -125,7 +163,17 @@ export default function App() {
   const [totalDuration, setTotalDuration] = useState(60);
   const [labels, setLabels] = useState({ parent: 'Section', child: 'Segment' });
   const [showSettings, setShowSettings] = useState(false);
-  const [preventOverlap, setPreventOverlap] = useState(true); // Default to TRUE
+  const [preventOverlap, setPreventOverlap] = useState(true); 
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Toggle Dark Mode Class
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
   
   const [sequences, setSequences] = useState([
     { 
@@ -133,6 +181,7 @@ export default function App() {
       name: 'Intro', 
       start: 0.0, 
       end: 0.25, 
+      collapsed: false,
       clips: [
         { id: 101, name: 'Fade In', start: 0.0, end: 0.2 },
         { id: 102, name: 'Title', start: 0.2, end: 1.0 }
@@ -143,6 +192,7 @@ export default function App() {
       name: 'Main Content', 
       start: 0.25,
       end: 0.8,
+      collapsed: false,
       clips: [
         { id: 201, name: 'Part A', start: 0.0, end: 0.5 }
       ]
@@ -169,6 +219,7 @@ export default function App() {
         name: `${labels.parent} ${sequences.length + 1}`, 
         start: parseFloat(newStart.toFixed(3)),
         end: parseFloat(Math.min(1.0, newEnd).toFixed(3)),
+        collapsed: false,
         clips: [] 
       }
     ]);
@@ -176,6 +227,15 @@ export default function App() {
 
   const removeSequence = (id) => {
     setSequences(sequences.filter(seq => seq.id !== id));
+  };
+
+  const toggleCollapse = (id) => {
+    setSequences(sequences.map(seq => {
+      if (seq.id === id) {
+        return { ...seq, collapsed: !seq.collapsed };
+      }
+      return seq;
+    }));
   };
 
   const updateSequence = (id, field, value) => {
@@ -225,13 +285,9 @@ export default function App() {
   };
 
   const moveSequence = (index, direction) => {
-    const newSequences = [...sequences];
-    if (direction === 'up' && index > 0) {
-      [newSequences[index], newSequences[index - 1]] = [newSequences[index - 1], newSequences[index]];
-    } else if (direction === 'down' && index < newSequences.length - 1) {
-      [newSequences[index], newSequences[index + 1]] = [newSequences[index + 1], newSequences[index]];
-    }
-    setSequences(newSequences);
+    // Use the helper to reorder AND recalculate start/end times
+    const updatedSequences = reorderAndRecalculate(sequences, index, direction);
+    setSequences(updatedSequences);
   };
 
   // --- Clip Logic ---
@@ -261,6 +317,17 @@ export default function App() {
     setSequences(sequences.map(seq => {
       if (seq.id === seqId) {
         return { ...seq, clips: seq.clips.filter(c => c.id !== clipId) };
+      }
+      return seq;
+    }));
+  };
+
+  const moveClip = (seqId, clipIndex, direction) => {
+    setSequences(sequences.map(seq => {
+      if (seq.id === seqId) {
+        // Recalculate timing for clips inside this sequence
+        const newClips = reorderAndRecalculate(seq.clips, clipIndex, direction);
+        return { ...seq, clips: newClips };
       }
       return seq;
     }));
@@ -356,11 +423,11 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 p-2 md:p-8 font-sans">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 p-2 md:p-8 font-sans transition-colors duration-300">
       <div className="max-w-5xl mx-auto space-y-6">
         
         {/* Global Header */}
-        <div className="bg-slate-900 text-white rounded-2xl shadow-lg p-6 sticky top-2 z-30">
+        <div className="bg-slate-900 dark:bg-slate-900 text-white rounded-2xl shadow-lg p-6 sticky top-2 z-30 ring-1 ring-slate-900/5">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div className="flex-1">
               <div className="flex items-center gap-3">
@@ -378,8 +445,17 @@ export default function App() {
             </div>
 
             {/* Controls */}
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               
+              {/* Theme Toggle */}
+              <button 
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-yellow-400 transition-colors"
+                title="Toggle Theme"
+              >
+                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              </button>
+
                {/* Prevent Overlap Toggle */}
                <button 
                  onClick={() => setPreventOverlap(!preventOverlap)}
@@ -406,16 +482,16 @@ export default function App() {
             
             {/* Settings Panel */}
             {showSettings && (
-              <div className="absolute top-20 left-6 z-50 bg-white text-slate-800 p-4 rounded-xl shadow-xl border border-slate-200 w-64 animate-in fade-in slide-in-from-top-4">
+              <div className="absolute top-20 left-6 z-50 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 p-4 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 w-64 animate-in fade-in slide-in-from-top-4">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-sm uppercase text-slate-500">Terminology</h3>
+                  <h3 className="font-bold text-sm uppercase text-slate-500 dark:text-slate-400">Terminology</h3>
                   <button onClick={() => setShowSettings(false)}><X className="w-4 h-4 text-slate-400 hover:text-red-500" /></button>
                 </div>
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-bold text-slate-400 block mb-1">Parent Label</label>
                     <input 
-                      className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:border-indigo-500 outline-none" 
+                      className="w-full border border-slate-200 dark:border-slate-600 dark:bg-slate-700 rounded px-2 py-1 text-sm focus:border-indigo-500 outline-none" 
                       value={labels.parent}
                       onChange={(e) => setLabels({...labels, parent: e.target.value})}
                       placeholder="e.g. Sequence, Chapter"
@@ -424,7 +500,7 @@ export default function App() {
                   <div>
                     <label className="text-xs font-bold text-slate-400 block mb-1">Child Label</label>
                     <input 
-                      className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:border-indigo-500 outline-none" 
+                      className="w-full border border-slate-200 dark:border-slate-600 dark:bg-slate-700 rounded px-2 py-1 text-sm focus:border-indigo-500 outline-none" 
                       value={labels.child}
                       onChange={(e) => setLabels({...labels, child: e.target.value})}
                       placeholder="e.g. Clip, Scene"
@@ -436,8 +512,8 @@ export default function App() {
           </div>
 
           {/* Global Timeline Preview Bar */}
-          <div className="mt-6 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-             <div className="h-6 bg-slate-700 rounded flex overflow-hidden relative">
+          <div className="mt-6 bg-slate-800/50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
+             <div className="h-6 bg-slate-700 dark:bg-slate-800 rounded flex overflow-hidden relative">
                {/* Grid */}
                {[0, 0.25, 0.5, 0.75, 1].map(tick => (
                  <div key={tick} className="absolute top-0 bottom-0 border-r border-white/10" style={{ left: `${tick * 100}%` }}></div>
@@ -464,7 +540,7 @@ export default function App() {
                  );
                })}
              </div>
-             <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1 px-1">
+             <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-1 px-1">
                <span>0s</span>
                <span>{totalDuration / 2}s</span>
                <span>{totalDuration}s</span>
@@ -479,26 +555,41 @@ export default function App() {
              const seqDuration = Math.max(0, (seq.end - seq.start) * totalDuration);
              
              return (
-              <div key={seq.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md group">
+              <div key={seq.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md group">
                 
                 {/* Sequence Header Bar */}
-                <div className={`p-4 border-b border-slate-100 ${index % 2 === 0 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                <div className={`p-4 border-b border-slate-100 dark:border-slate-800 ${index % 2 === 0 ? 'bg-slate-50/50 dark:bg-slate-800/20' : 'bg-white dark:bg-slate-900'}`}>
                   <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
                     
-                    {/* Top Row: Reorder, Name, Duration, Trash */}
+                    {/* Top Row: Reorder, Collapse, Name, Duration, Trash */}
                     <div className="flex items-center gap-4 w-full flex-1">
-                      {/* 1. Reorder */}
-                      <div className="flex flex-col gap-1 pr-2 border-r border-slate-200">
-                        <button 
-                          onClick={() => moveSequence(index, 'up')}
-                          disabled={index === 0}
-                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-30"
-                        ><ArrowUp className="w-3 h-3" /></button>
-                        <button 
-                          onClick={() => moveSequence(index, 'down')}
-                          disabled={index === sequences.length - 1}
-                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-30"
-                        ><ArrowDown className="w-3 h-3" /></button>
+                      
+                      {/* 1. Reorder & Collapse */}
+                      <div className="flex flex-col gap-1 pr-2 border-r border-slate-200 dark:border-slate-700">
+                         {/* Reorder Buttons */}
+                         <div className="flex gap-1 mb-1 justify-center">
+                            <button 
+                              onClick={() => moveSequence(index, 'up')}
+                              disabled={index === 0}
+                              className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30"
+                              title="Move Up"
+                            ><ArrowUp className="w-3 h-3" /></button>
+                            <button 
+                              onClick={() => moveSequence(index, 'down')}
+                              disabled={index === sequences.length - 1}
+                              className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30"
+                              title="Move Down"
+                            ><ArrowDown className="w-3 h-3" /></button>
+                         </div>
+                         
+                         {/* Collapse Button */}
+                         <button 
+                           onClick={() => toggleCollapse(seq.id)}
+                           className="flex items-center justify-center p-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400 transition-colors"
+                           title={seq.collapsed ? "Expand" : "Collapse"}
+                         >
+                           {seq.collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                         </button>
                       </div>
 
                       {/* 2. Name & Duration Block */}
@@ -511,28 +602,29 @@ export default function App() {
                               type="text" 
                               value={seq.name}
                               onChange={(e) => updateSequence(seq.id, 'name', e.target.value)}
-                              className="w-full font-bold text-lg text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none transition-colors"
+                              className="w-full font-bold text-lg text-slate-700 dark:text-slate-200 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none transition-colors"
                             />
                           </div>
                         </div>
 
                         {/* Total Duration Display */}
-                        <div className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 flex items-center gap-2 whitespace-nowrap">
+                        <div className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center gap-2 whitespace-nowrap">
                              <Clock className="w-3 h-3 text-slate-400" />
-                             <span className="text-sm font-mono font-bold text-slate-700">{seqDuration.toFixed(2)}s</span>
+                             <span className="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">{seqDuration.toFixed(2)}s</span>
                         </div>
                       </div>
                       
                       {/* 3. Trash */}
                       <button 
                         onClick={() => removeSequence(seq.id)}
-                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-slate-800 rounded-full transition-colors"
                       ><Trash2 className="w-5 h-5" /></button>
                     </div>
                   </div>
 
                   {/* Controls Row: Sequence Timing & Sliders */}
-                  <div className="mt-4 pt-4 border-t border-slate-100/50">
+                  {!seq.collapsed && (
+                  <div className="mt-4 pt-4 border-t border-slate-100/50 dark:border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
                        
                        {/* Inputs (Left) */}
@@ -544,7 +636,7 @@ export default function App() {
                                   type="number" step="0.01" min="0" max="1"
                                   value={seq.start}
                                   onChange={(e) => updateSequence(seq.id, 'start', e.target.value)}
-                                  className="w-full text-xs font-mono bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
+                                  className="w-full text-xs font-mono bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                             {/* Ratio End */}
@@ -554,7 +646,7 @@ export default function App() {
                                   type="number" step="0.01" min="0" max="1"
                                   value={seq.end}
                                   onChange={(e) => updateSequence(seq.id, 'end', e.target.value)}
-                                  className="w-full text-xs font-mono bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
+                                  className="w-full text-xs font-mono bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                             {/* Sec Start */}
@@ -564,7 +656,7 @@ export default function App() {
                                   type="number"
                                   value={(seq.start * totalDuration).toFixed(3)}
                                   onChange={(e) => updateSequence(seq.id, 'startSec', parseFloat(e.target.value))}
-                                  className="w-full text-xs font-mono bg-indigo-50 border border-indigo-100 rounded px-2 py-1.5 text-indigo-700 focus:border-indigo-500 outline-none"
+                                  className="w-full text-xs font-mono bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 rounded px-2 py-1.5 text-indigo-700 dark:text-indigo-400 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                             {/* Sec End */}
@@ -574,7 +666,7 @@ export default function App() {
                                   type="number"
                                   value={(seq.end * totalDuration).toFixed(3)}
                                   onChange={(e) => updateSequence(seq.id, 'endSec', parseFloat(e.target.value))}
-                                  className="w-full text-xs font-mono bg-indigo-50 border border-indigo-100 rounded px-2 py-1.5 text-indigo-700 focus:border-indigo-500 outline-none"
+                                  className="w-full text-xs font-mono bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 rounded px-2 py-1.5 text-indigo-700 dark:text-indigo-400 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                        </div>
@@ -596,10 +688,12 @@ export default function App() {
                        </div>
                     </div>
                   </div>
+                  )}
                 </div>
 
                 {/* Sequence Body (Clips) */}
-                <div className="p-4 bg-slate-50 border-t border-slate-100">
+                {!seq.collapsed && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/50 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-300">
                   
                   {/* DEDICATED SECTION TIMELINE PREVIEW */}
                   <div className="mb-6 relative px-1">
@@ -608,10 +702,10 @@ export default function App() {
                       <span>{labels.parent} Timeline Preview</span>
                       <span>{seqDuration.toFixed(2)}s</span>
                     </div>
-                    <div className="h-8 bg-slate-200 rounded-md border border-slate-300 overflow-hidden relative">
+                    <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden relative">
                       {/* Grid lines */}
                       {[0, 0.25, 0.5, 0.75, 1].map(t => (
-                        <div key={t} className="absolute top-0 bottom-0 border-r border-slate-300/50" style={{ left: `${t*100}%` }} />
+                        <div key={t} className="absolute top-0 bottom-0 border-r border-slate-300/50 dark:border-slate-600/30" style={{ left: `${t*100}%` }} />
                       ))}
                       
                       {/* Clips */}
@@ -636,34 +730,49 @@ export default function App() {
                   </div>
 
                   {/* Clips List */}
-                  <div className="space-y-3 pl-2 md:pl-6 border-l-2 border-slate-200">
+                  <div className="space-y-3 pl-2 md:pl-6 border-l-2 border-slate-200 dark:border-slate-700">
                     <div className="flex items-center gap-2 mb-3">
                       <Scissors className="w-4 h-4 text-slate-400" />
                       <span className="text-xs font-bold text-slate-500 uppercase">{labels.child}s</span>
                     </div>
 
-                    {seq.clips.map((clip) => {
+                    {seq.clips.map((clip, clipIdx) => {
                       const clipDuration = (clip.end - clip.start) * seqDuration;
                       const clipStartSec = clip.start * seqDuration;
                       const clipEndSec = clip.end * seqDuration;
 
                       return (
-                        <div key={clip.id} className="bg-white p-3 rounded shadow-sm border border-slate-100 hover:border-indigo-100 transition-colors">
+                        <div key={clip.id} className="bg-white dark:bg-slate-900 p-3 rounded shadow-sm border border-slate-100 dark:border-slate-800 hover:border-indigo-100 dark:hover:border-indigo-900 transition-colors">
                           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center mb-3">
+                            
+                            {/* Reorder Buttons (New) */}
+                            <div className="md:col-span-1 flex flex-col items-center justify-center gap-1 border-r border-slate-100 dark:border-slate-800 pr-2">
+                                <button 
+                                  onClick={() => moveClip(seq.id, clipIdx, 'up')}
+                                  disabled={clipIdx === 0}
+                                  className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-20"
+                                ><ArrowUp className="w-3 h-3" /></button>
+                                <button 
+                                  onClick={() => moveClip(seq.id, clipIdx, 'down')}
+                                  disabled={clipIdx === seq.clips.length - 1}
+                                  className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-20"
+                                ><ArrowDown className="w-3 h-3" /></button>
+                            </div>
+
                             {/* Clip Name */}
-                            <div className="md:col-span-3 flex items-center gap-2">
+                            <div className="md:col-span-2 flex items-center gap-2">
                                <Play className="w-3 h-3 text-slate-300 fill-slate-300 flex-none" />
                                <input 
                                  type="text" 
                                  value={clip.name}
                                  onChange={(e) => updateClip(seq.id, clip.id, 'name', e.target.value)}
-                                 className="w-full text-xs font-bold text-slate-700 bg-transparent outline-none focus:underline"
+                                 className="w-full text-xs font-bold text-slate-700 dark:text-slate-200 bg-transparent outline-none focus:underline"
                                  placeholder={`${labels.child} Name`}
                                />
                             </div>
                             
                             {/* Clip Inputs (Start/End Ratios & Seconds) */}
-                            <div className="md:col-span-6 grid grid-cols-4 gap-2">
+                            <div className="md:col-span-7 grid grid-cols-4 gap-2">
                                 {/* Start Ratio */}
                                 <div>
                                   <label className="text-[8px] uppercase text-slate-400 font-bold block mb-0.5">Start (0-1)</label>
@@ -671,7 +780,7 @@ export default function App() {
                                     type="number" step="0.01" min="0" max="1"
                                     value={clip.start}
                                     onChange={(e) => updateClip(seq.id, clip.id, 'start', e.target.value)}
-                                    className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-1 py-1 focus:border-indigo-500 outline-none"
+                                    className="w-full text-xs font-mono bg-slate-50 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 focus:border-indigo-500 outline-none"
                                   />
                                 </div>
                                 {/* End Ratio */}
@@ -681,7 +790,7 @@ export default function App() {
                                     type="number" step="0.01" min="0" max="1"
                                     value={clip.end}
                                     onChange={(e) => updateClip(seq.id, clip.id, 'end', e.target.value)}
-                                    className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-1 py-1 focus:border-indigo-500 outline-none"
+                                    className="w-full text-xs font-mono bg-slate-50 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 focus:border-indigo-500 outline-none"
                                   />
                                 </div>
                                 {/* Start Seconds */}
@@ -690,7 +799,7 @@ export default function App() {
                                   <input 
                                     type="number" value={clipStartSec.toFixed(3)}
                                     onChange={(e) => updateClip(seq.id, clip.id, 'startSec', parseFloat(e.target.value))}
-                                    className="w-full text-xs font-mono bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-1 py-1 focus:border-indigo-500 outline-none"
+                                    className="w-full text-xs font-mono bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 text-indigo-700 dark:text-indigo-400 rounded px-1 py-1 focus:border-indigo-500 outline-none"
                                   />
                                 </div>
                                 {/* End Seconds */}
@@ -699,15 +808,15 @@ export default function App() {
                                   <input 
                                     type="number" value={clipEndSec.toFixed(3)}
                                     onChange={(e) => updateClip(seq.id, clip.id, 'endSec', parseFloat(e.target.value))}
-                                    className="w-full text-xs font-mono bg-indigo-50 border border-indigo-100 text-indigo-700 rounded px-1 py-1 focus:border-indigo-500 outline-none"
+                                    className="w-full text-xs font-mono bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 text-indigo-700 dark:text-indigo-400 rounded px-1 py-1 focus:border-indigo-500 outline-none"
                                   />
                                 </div>
                             </div>
 
                             {/* Duration & Delete */}
-                            <div className="md:col-span-3 flex justify-end items-center gap-3">
+                            <div className="md:col-span-2 flex justify-end items-center gap-2">
                                <span className="text-xs text-slate-400 font-mono">{clipDuration.toFixed(2)}s</span>
-                               <button onClick={() => removeClip(seq.id, clip.id)} className="text-slate-300 hover:text-red-500">
+                               <button onClick={() => removeClip(seq.id, clip.id)} className="text-slate-300 hover:text-red-500 dark:hover:text-red-400">
                                  <Trash2 className="w-4 h-4" />
                                </button>
                             </div>
@@ -718,7 +827,7 @@ export default function App() {
                              <TimelineSlider 
                                start={clip.start}
                                end={clip.end}
-                               color="bg-slate-400"
+                               color="bg-slate-400 dark:bg-slate-500"
                                label={clip.name}
                                subLabel={`${clipDuration.toFixed(2)}s`}
                                onChange={(type, val) => updateClip(seq.id, clip.id, type, val)}
@@ -730,13 +839,14 @@ export default function App() {
 
                     <button 
                       onClick={() => addClip(seq.id)}
-                      className="mt-2 text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 py-2 px-3 hover:bg-indigo-50 rounded transition-colors"
+                      className="mt-2 text-xs font-bold text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 py-2 px-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded transition-colors"
                     >
                       <Plus className="w-3 h-3" /> Add {labels.child}
                     </button>
                   </div>
 
                 </div>
+                )}
               </div>
              );
           })}
@@ -746,14 +856,14 @@ export default function App() {
         <div className="flex flex-col sm:flex-row gap-4 pt-4 pb-12">
           <button 
             onClick={addSequence}
-            className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2"
+            className="flex-1 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white py-3 px-6 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" /> Add New {labels.parent}
           </button>
           
           <button 
             onClick={copyResults}
-            className="flex-none bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-3 px-6 rounded-xl font-bold shadow-sm transition-all flex items-center justify-center gap-2"
+            className="flex-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 px-6 rounded-xl font-bold shadow-sm transition-all flex items-center justify-center gap-2"
           >
             {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5" />}
             {copied ? 'Copied!' : 'Copy Summary'}
